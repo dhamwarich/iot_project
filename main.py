@@ -38,16 +38,12 @@ class SensorReader:
                 if line.startswith("[") and line.endswith("]"):
                     try:
                         values = ast.literal_eval(line)
-                        if isinstance(values, list):
+                        if isinstance(values, list) and len(values) == 3:
                             self.latest_values = values
-                            print(f"[SensorReader] Received: {values}")
                     except Exception as e:
-                        print(f"[SensorReader] Parse error: {e}")
+                        print(f"[SensorReader] Parse error: {e}, line: {line}")
             except Exception as e:
                 print(f"[SensorReader] Read error: {e}")
-            
-            line = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
-            self.latest_values = line
             time.sleep(0.1)
 
     def get_latest_values(self):
@@ -67,9 +63,19 @@ def main():
 		sensor_reader.start()
 		while True:
 			values = sensor_reader.get_latest_values()
+			if not values:
+				time.sleep(0.2)
+				continue
+			
 			distance = distanceSensor.distance * 100
 			light, soil, water = values
 			print(f"from stm32: {values}, distance: {distance}")
+
+			lcd.clear()
+			lcd.write_string(f"L:{light} S:{soil} W:{water}")
+			lcd.crlf()
+			lcd.write_string(f"Dist: {distance:.1f}cm")
+
 			if distance < 25:
 				# motor_right.forward()
 				# motor_left.forward()
@@ -79,13 +85,11 @@ def main():
 				# motor_left.stop()
 				pass
 				
-			if light == 0:
-				lcd.write_string('sleep')
-				
 			time.sleep(0.2)
 			
 	except KeyboardInterrupt:
-		print("\n[Main] Interrupted by user.")
+		print("
+[Main] Interrupted by user.")
 	finally:
 		print("[Main] Shutting down...")
 		sensor_reader.stop()
