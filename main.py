@@ -1,7 +1,7 @@
 import serial
 import threading
 import time
-import ast
+import re
 # import RPi.GPIO as GPIO
 from gpiozero import Motor, DistanceSensor
 from RPLCD.i2c import CharLCD
@@ -35,13 +35,15 @@ class SensorReader:
         while self.running and self.serial_conn and self.serial_conn.is_open:
             try:
                 line = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
-                if line.startswith("[") and line.endswith("]"):
+                # Example: [Light Detected: 1, Soil Humidity: 0.0]
+                match = re.search(r"Light Detected:\s*(\d+),\s*Soil Humidity:\s*([\d.]+)", line)
+                if match:
                     try:
-                        values = ast.literal_eval(line)
-                        if isinstance(values, list) and len(values) == 3:
-                            self.latest_values = values
-                    except Exception as e:
-                        print(f"[SensorReader] Parse error: {e}, line: {line}")
+                        light = int(match.group(1))
+                        soil = float(match.group(2))
+                        self.latest_values = [light, soil]
+                    except (ValueError, IndexError) as e:
+                        print(f"[SensorReader] Parse error after match: {e}, line: {line}")
             except Exception as e:
                 print(f"[SensorReader] Read error: {e}")
             time.sleep(0.1)
@@ -68,11 +70,11 @@ def main():
 				continue
 			
 			distance = distanceSensor.distance * 100
-			light, soil, water = values
+			light, soil = values
 			print(f"from stm32: {values}, distance: {distance}")
 
 			lcd.clear()
-			lcd.write_string(f"L:{light} S:{soil} W:{water}")
+			lcd.write_string(f"L:{light} S:{soil}")
 			lcd.crlf()
 			lcd.write_string(f"Dist: {distance:.1f}cm")
 
