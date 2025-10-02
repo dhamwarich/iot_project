@@ -1,7 +1,8 @@
 import serial
 import threading
 import time
-import re
+import ast
+import random
 # import RPi.GPIO as GPIO
 from gpiozero import Motor, DistanceSensor
 from RPLCD.i2c import CharLCD
@@ -35,23 +36,25 @@ class SensorReader:
         while self.running and self.serial_conn and self.serial_conn.is_open:
             try:
                 line = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
-                # Example: [Light Detected: 1, Soil Humidity: 0.0]
-                match = re.search(r"Light Detected:\s*(\d+),\s*Soil Humidity:\s*([\d.]+)", line)
-                if match:
+                if line.startswith("[") and line.endswith("]"):
                     try:
-                        light = int(match.group(1))
-                        soil = float(match.group(2))
-                        self.latest_values = [light, soil]
-                    except (ValueError, IndexError) as e:
-                        print(f"[SensorReader] Parse error after match: {e}, line: {line}")
+                        values = ast.literal_eval(line)
+                        if isinstance(values, list):
+                            self.latest_values = values
+                            print(f"[SensorReader] Received: {values}")
+                    except Exception as e:
+                        print(f"[SensorReader] Parse error: {e}")
             except Exception as e:
                 print(f"[SensorReader] Read error: {e}")
+            
+            line = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
+            self.latest_values = line
             time.sleep(0.1)
 
     def get_latest_values(self):
         return self.latest_values
         
-     
+
 
 # === Example Main Logic ===
 def main():
@@ -59,39 +62,103 @@ def main():
 	lcd.clear()
 	sensor_reader = SensorReader(port="/dev/ttyACM0", baudrate=115200)
 	distanceSensor = DistanceSensor(echo=23, trigger=24)
-	motor_right = Motor(22, 27)
-	motor_left = Motor(16, 20)
+	motor_right = Motor(27, 22)
+	motor_left = Motor(20, 16)
+	
+	face_awake = "0 ___ 0"
+	
+	face_sleep = "- ___ -"
+	
+	face_tired = "? ___ ?"
+	
+	face_sad = "T ___ T"
+	
+	face_patterns = [face_awake, face_sleep, face_tired, face_sad]
+	
+	
 	try:
 		sensor_reader.start()
+		
+		motor_idx = 0
+		
+		face_idx = 0
+		
+		current_face = face_awake
+		
+		lcd.cursor_pos = (1,0)
+		
 		while True:
+			lcd.write_string(current_face.center(16))
+			light, soil_humidity = 0,0
 			values = sensor_reader.get_latest_values()
-			if not values:
-				time.sleep(0.2)
-				continue
+
+			if len(str(values).split(",")) == 2: 
+				for i in range(len(str(values).split(","))):
+					if i == 0:
+						light = str(values).split(",")[i]
+					else:
+						soil_humidity = str(values).split(",")[i]
+			
+			
+			light_val = -999
+			soil_humidity_val = -999
+			
+			
+			if type(light) == str and type(soil_humidity) == str:						
+				light_val = light.split(" ")[-1]
+				soil_humidity_val = soil_humidity[:-1].split(" ")[-1]
 			
 			distance = distanceSensor.distance * 100
-			light, soil = values
-			print(f"from stm32: {values}, distance: {distance}")
-
-			lcd.clear()
-			lcd.write_string(f"L:{light} S:{soil}")
-			lcd.crlf()
-			lcd.write_string(f"Dist: {distance:.1f}cm")
-
-			if distance < 25:
-				# motor_right.forward()
-				# motor_left.forward()
-				pass
-			else:
-				# motor_right.stop()
-				# motor_left.stop()
-				pass
+			print(f"from stm32: light {light_val}, soil {soil_humidity_val}, distance: {distance}")
+			
+			# if dark stop motor
+			if not int(light_val):
+				motor_right.stop()
+				motor_left.stop()
+				current_face = face_sleep
+				time.sleep(0.2)
+				lcd.clear()
+				continue
+			
+			# if not enough humidity, move slower
+			if float(soil_humidity_val) < 30:
+				current_face = face_tired
+				if distance > 15:
+					motor_right.forward(speed=0.4)
+					motor_left.forward(speed=0.4)
+				else:
+					motor_left.forward(speed=0.4)
+					motor_right.backward(speed=0.4)
+			else:	
+				current_face = face_awake			
+				if distance > 15:
+					motor_right.forward(speed=0.7)
+					motor_left.forward(speed=0.7)
+				else:
+					motor_left.forward(speed=0.7)
+					motor_right.backward(speed=0.7)
 				
+			
+			#if face_idx > len(face_patterns):
+				#face_idx = 0
+				
+
+			#new_face = face_patterns[int(face_idx)]
+			
+			#if new_face != current_face:
+				#current_face = new_face
+				#lcd.clear()
+				#lcd.write_string(str(current_face))
+			#else:
+				#pass
+							
+			#print(current_face)
+			
 			time.sleep(0.2)
+			lcd.clear()
 			
 	except KeyboardInterrupt:
-		print()
-		print("[Main] Interrupted by user.")
+		print("\n[Main] Interrupted by user.")
 	finally:
 		print("[Main] Shutting down...")
 		sensor_reader.stop()
