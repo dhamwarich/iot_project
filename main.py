@@ -88,8 +88,8 @@ def main():
 			time.sleep(0.2)
 			
 	except KeyboardInterrupt:
-		print("
-[Main] Interrupted by user.")
+		print()
+		print("[Main] Interrupted by user.")
 	finally:
 		print("[Main] Shutting down...")
 		sensor_reader.stop()
