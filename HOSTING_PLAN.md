@@ -19,7 +19,22 @@ The `/state` endpoint serves data, and `/` renders the template (which loads the
 2. **Entry point**: confirm that running `uvicorn app:app --host 0.0.0.0 --port $PORT` works locally.
 3. **Static/Template folders**: remain relative to the project root so that cloud runners can locate them.
 
-## 3. Deploying on NETPIE (MicroGear HTTP Service)
+## 3. Rapid Tunneling Demo via ngrok
+
+Use ngrok when you need to expose your local FastAPI server temporarily (demo, quick test, stakeholder review).
+
+1. **Install ngrok**: download from https://ngrok.com, install binary, and run `ngrok config add-authtoken <token>` once.
+2. **Run FastAPI locally**: `uvicorn app:app --host 0.0.0.0 --port 8000` (or another port if needed).
+3. **Open tunnel**: in another terminal, execute `ngrok http 8000`. ngrok prints a public HTTPS URL like `https://1234abcd.ngrok.io`.
+4. **Share the URL**: stakeholders can hit `/` for the dashboard and `/state` for the API while the tunnel remains active.
+5. **Optional hardening**:
+   - Use `ngrok http --basic-auth username:password 8000` to protect access.
+   - Reserve a domain on paid plans (`ngrok http --domain plantbot.ngrok.app 8000`).
+   - Add ngrok to `.env` + scripts for reproducible demos.
+
+Limitations: ngrok tunnels die when you stop the client, free URLs rotate per session, and your machine must stay online. For 24/7 access, move to a persistent host (Render, Railway, VPS, etc.).
+
+## 4. Deploying on NETPIE (MicroGear HTTP Service)
 
 NETPIE normally focuses on MQTT/pub-sub. To host the dashboard:
 
@@ -32,7 +47,7 @@ NETPIE normally focuses on MQTT/pub-sub. To host the dashboard:
    - Configure NETPIE DNS to point to the instance.
 4. **Secure API**: restrict `/state` with API key or NETPIE auth header if exposing publicly.
 
-## 4. Alternative (Render/Railway/Vercel + MQTT via NETPIE)
+## 5. Alternative (Render/Railway/Vercel + MQTT via NETPIE)
 
 If NETPIE will mainly provide the MQTT broker:
 
@@ -40,7 +55,7 @@ If NETPIE will mainly provide the MQTT broker:
 2. Point the dashboard JS to that URL (`const API_BASE = 'https://yourapp.render.com';`).
 3. Use NETPIE only for device telemetry (STM32 publishes to NETPIE MQTT; FastAPI subscribes via `microgear` client or a background task).
 
-## 5. Next Implementation Tasks
+## 6. Next Implementation Tasks
 
 1. Add `requirements.txt` listing FastAPI, uvicorn, jinja2, gpiozero, pyserial.
 2. Parameterize API base URL in `static/dashboard.js` for cloud deployment.
