@@ -7,6 +7,8 @@ from typing import Optional
 try:
     from fastapi import FastAPI, Request
     from fastapi.responses import HTMLResponse
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.templating import Jinja2Templates
     from pydantic import BaseModel
     import uvicorn
 except ImportError:
@@ -226,6 +228,9 @@ class RobotController:
 # --- 3. Web Server Setup ---
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
+
 robot = RobotController()
 
 @app.on_event("shutdown")
@@ -238,76 +243,7 @@ async def get_state():
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Robot Dashboard</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding-top: 50px; }
-            .card { background: white; padding: 2rem; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 350px; text-align: center; }
-            .face { font-size: 4rem; font-family: monospace; margin: 1rem 0; background: #eee; padding: 1rem; border-radius: 10px; }
-            .stat { display: flex; justify-content: space-between; padding: 0.8rem 0; border-bottom: 1px solid #eee; }
-            .stat:last-child { border-bottom: none; }
-            .val { font-weight: bold; color: #007bff; }
-            .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.9rem; color: white; }
-            .bg-green { background: #28a745; }
-            .bg-red { background: #dc3545; }
-            .bg-grey { background: #6c757d; }
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h2>🤖 Plant Robot</h2>
-            <div id="face" class="face">...</div>
-            
-            <div class="stat">
-                <span>Light</span>
-                <span id="light" class="badge bg-grey">...</span>
-            </div>
-            <div class="stat">
-                <span>Soil Moisture</span>
-                <span id="soil" class="val">...</span>
-            </div>
-            <div class="stat">
-                <span>Distance</span>
-                <span id="dist" class="val">...</span>
-            </div>
-            <div class="stat">
-                <span>Motor</span>
-                <span id="motor" class="val">...</span>
-            </div>
-        </div>
-
-        <script>
-            async function update() {
-                try {
-                    const res = await fetch('/state');
-                    const data = await res.json();
-                    
-                    document.getElementById('face').innerText = data.current_face;
-                    document.getElementById('soil').innerText = data.soil_val.toFixed(1) + '%';
-                    document.getElementById('dist').innerText = data.distance_cm.toFixed(1) + ' cm';
-                    document.getElementById('motor').innerText = data.motor_state;
-                    
-                    const lightEl = document.getElementById('light');
-                    if(data.light_val === 1) {
-                        lightEl.innerText = "BRIGHT";
-                        lightEl.className = "badge bg-green";
-                    } else {
-                        lightEl.innerText = "DARK";
-                        lightEl.className = "badge bg-red";
-                    }
-                } catch(e) { console.log(e); }
-            }
-            setInterval(update, 1000);
-            update();
-        </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(html)
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
 if __name__ == "__main__":
     print("Starting Robot Server...")

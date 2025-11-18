@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Robot Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', path='dashboard.css') }}">
+</head>
+<body>
+    <main class="page">
+        <section class="panel panel--status">
+            <header class="panel__header">
+                <div class="chip">Live</div>
+                <div class="timestamp" id="timestamp">--:--:--</div>
+            </header>
+            <div class="face" id="face">0 ___ 0</div>
+            <h1>Plant Care Rover</h1>
+            <p class="subtitle">Monitoring light, soil and distance in real-time.</p>
+        </section>
+
+        <section class="panel panel--metrics">
+            <div class="metric" id="light-card">
+                <div class="metric__label">Light</div>
+                <div class="metric__value" id="light-value">--</div>
+                <div class="metric__status" id="light-status">Waiting...</div>
+            </div>
+            <div class="metric" id="soil-card">
+                <div class="metric__label">Soil Moisture</div>
+                <div class="metric__value" id="soil-value">-- %</div>
+                <div class="metric__status" id="soil-status">Waiting...</div>
+            </div>
+            <div class="metric" id="distance-card">
+                <div class="metric__label">Distance</div>
+                <div class="metric__value" id="distance-value">-- cm</div>
+                <div class="metric__status" id="distance-status">Waiting...</div>
+            </div>
+            <div class="metric" id="motor-card">
+                <div class="metric__label">Motor</div>
+                <div class="metric__value" id="motor-value">--</div>
+                <div class="metric__status" id="motor-status">Waiting...</div>
+            </div>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', path='dashboard.js') }}" defer></script>
+</body>
+</html>
