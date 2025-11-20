@@ -1,7 +1,10 @@
+import json
+import os
+import re
 import time
 import threading
 import random
-from typing import Optional
+from typing import Optional, Dict, Any
 
 # --- FASTAPI & SERVER IMPORTS ---
 try:
@@ -18,13 +21,22 @@ except ImportError:
 
 # --- HARDWARE IMPORTS (With Fallback) ---
 try:
-    import serial
-    from gpiozero import Motor, DistanceSensor
-    HARDWARE_AVAILABLE = True
+    import serial  # pyserial
+    SERIAL_AVAILABLE = True
 except ImportError:
-    print("Hardware libraries (gpiozero/pyserial) not found. Running in MOCK MODE.")
-    HARDWARE_AVAILABLE = False
-    serial = None  # Placeholder
+    serial = None
+    SERIAL_AVAILABLE = False
+    print("PySerial not found. Serial sensor data disabled.")
+
+try:
+    from gpiozero import Motor, DistanceSensor
+    GPIO_AVAILABLE = True
+except ImportError:
+    print("gpiozero not found. Running motor/distance hardware in MOCK MODE.")
+    GPIO_AVAILABLE = False
+    Motor = DistanceSensor = None
+
+HARDWARE_AVAILABLE = GPIO_AVAILABLE
 
 # --- 1. Data Models & Config ---
 
@@ -60,12 +72,12 @@ class RobotController:
         self._stop_event = threading.Event()
         
         # State initialization
-        self.current_face = FACES["awake"]
-        self.light_val = 1
-        self.soil_val = 50.0
-        self.distance = 0.0
-        self.motor_state = "STOPPED"
-        self.temperature_c = 24.0
+        self.current_face: str = FACES["awake"]
+        self.light_val: Optional[int] = 1
+        self.soil_val: Optional[float] = 50.0
+        self.distance: float = 0.0
+        self.motor_state: str = "STOPPED"
+        self.temperature_c: float = 24.0
         self.gesture_label: Optional[str] = None
         self.gesture_mode: Optional[str] = None
         self.gesture_message: Optional[str] = "No gesture detected"
@@ -78,30 +90,32 @@ class RobotController:
         self.distance_sensor = None
         self.use_mock_hardware = not HARDWARE_AVAILABLE
 
-        if HARDWARE_AVAILABLE:
+        # Serial connection (independent of GPIO hardware)
+        if SERIAL_AVAILABLE:
             try:
-                # Attempt Serial Connection
-                try:
-                    self.serial_conn = serial.Serial(port, baudrate, timeout=0.1)
-                    print(f"Serial connected on {port}")
-                except serial.SerialException:
-                    print(f"Serial port {port} not found. Using Mock Serial data.")
-                    self.serial_conn = None
+                self.serial_conn = serial.Serial(port, baudrate, timeout=0.2)
+                print(f"Serial connected on {port} @ {baudrate} bps")
+            except serial.SerialException as exc:
+                print(f"Serial port {port} unavailable ({exc}). Keeping mock serial data.")
+                self.serial_conn = None
+        else:
+            print("PySerial unavailable. Install 'pyserial' to read STM32 data.")
 
-                # Attempt GPIO Setup
-                # Using specific pins from your snippet
+        # GPIO hardware setup (motors, ultrasonic)
+        if GPIO_AVAILABLE and Motor and DistanceSensor:
+            try:
                 self.distance_sensor = DistanceSensor(echo=23, trigger=24)
                 self.motor_right = Motor(forward=27, backward=22)
                 self.motor_left = Motor(forward=16, backward=20)
-                print("GPIO Hardware Initialized.")
-                
-            except Exception as e:
-                print(f"Hardware initialization failed ({e}). Switching to Mock Mode.")
+                print("GPIO hardware initialized.")
+            except Exception as exc:
+                print(f"GPIO initialization failed ({exc}). Switching to mock drive mode.")
                 self.use_mock_hardware = True
+        else:
+            self.use_mock_hardware = True
 
-        # If we are mocking, we don't need real objects, just logic
         if self.use_mock_hardware:
-            print("--- RUNNING IN MOCK MODE ---")
+            print("--- RUNNING DRIVE HARDWARE IN MOCK MODE ---")
 
         # Start background thread
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -133,44 +147,100 @@ class RobotController:
 
     # --- Sensor Logic ---
 
+    def _read_serial_packet(self):
+        if not self.serial_conn:
+            return {}
+
+        try:
+            raw = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
+            if not raw:
+                return {}
+
+            # Try JSON payload first
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return {str(k).strip().lower(): parsed[k] for k in parsed}
+            except json.JSONDecodeError:
+                pass
+
+            # Fallback: key:value comma-separated string
+            cleaned = raw.replace("[", "").replace("]", "")
+            packet = {}
+            for part in cleaned.split(","):
+                if ":" not in part:
+                    continue
+                key, value = part.split(":", 1)
+                packet[key.strip().lower()] = value.strip()
+            return packet
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _coerce_numeric(value):
+        if isinstance(value, (int, float)):
+            return float(value)
+        match = re.search(r"-?\d+(?:\.\d+)?", str(value))
+        if match:
+            try:
+                return float(match.group())
+            except ValueError:
+                return None
+        return None
+
+    def _extract_serial_number(self, packet, keys, as_int=False):
+        for key in keys:
+            if key in packet:
+                number = self._coerce_numeric(packet[key])
+                if number is not None:
+                    return int(number) if as_int else float(number)
+        return None
+
     def _read_sensors(self):
         """Reads real hardware or generates mock data."""
-        
-        # 1. Distance
-        if not self.use_mock_hardware and self.distance_sensor:
-            # gpiozero returns meters, convert to cm
+
+        packet = self._read_serial_packet()
+
+        # Distance from STM32 payload (fallback to GPIO sensor, then mock)
+        dist_cm = self._extract_serial_number(packet, (
+            "distance", "distance_cm", "range", "distance (cm)"
+        ))
+
+        if dist_cm is None and not self.use_mock_hardware and self.distance_sensor:
             dist_cm = self.distance_sensor.distance * 100
-        else:
-            # Mock: Randomly fluctuate distance
+        elif dist_cm is None and self.distance:
+            dist_cm = self.distance
+        elif dist_cm is None:
             dist_cm = random.uniform(10, 100)
 
-        # 2. Serial (Light/Soil)
-        l_val, s_val = self.light_val, self.soil_val
+        # Light & soil moisture from serial
+        l_val = self._extract_serial_number(packet, (
+            "light", "light_val", "light detected", "lightdetected"
+        ), as_int=True)
+        s_val = self._extract_serial_number(packet, (
+            "soil", "soil_val", "soil humidity", "soil_humidity"
+        ))
 
-        if self.serial_conn:
-            try:
-                line = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
-                if line:
-                    # Parse: "[Light Detected: 1, Soil Humidity: 45.2]"
-                    line = line.replace("[", "").replace("]", "")
-                    line = line.replace("Light Detected: ", "").replace("Soil Humidity: ", "")
-                    parts = line.split(",")
-                    if len(parts) == 2:
-                        l_val = int(parts[0].strip())
-                        s_val = float(parts[1].strip())
-            except Exception:
-                pass # Keep last known values on error
-        elif self.use_mock_hardware or self.serial_conn is None:
-            # Mock: Randomly toggle light and fluctuate soil
-            if random.random() > 0.95: # 5% chance to flip light
+        if l_val is None and s_val is None and (not packet) and not self.serial_conn:
+            # No serial hardware at all -> mock light/soil
+            l_val = self.light_val
+            if random.random() > 0.95:
                 l_val = 1 if l_val == 0 else 0
-            
-            # Jitter soil slightly
+            s_val = self.soil_val
             change = random.uniform(-2, 2)
-            s_val = max(0, min(100, s_val + change))
+            s_val = max(0, min(100, (s_val or 50.0) + change))
+        else:
+            if l_val is None:
+                l_val = self.light_val
+            if s_val is None:
+                s_val = self.soil_val
 
-        # 3. Temperature (mocked for now)
-        temp = max(18.0, min(35.0, self.temperature_c + random.uniform(-0.3, 0.3)))
+        # Temperature (prefer serial, otherwise jitter existing mock)
+        temp = self._extract_serial_number(packet, (
+            "temperature", "temperature_c", "temp"
+        ))
+        if temp is None:
+            temp = max(18.0, min(35.0, self.temperature_c + random.uniform(-0.3, 0.3)))
 
         return dist_cm, l_val, s_val, temp
 
