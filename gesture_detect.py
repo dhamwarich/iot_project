@@ -1,5 +1,14 @@
+import os
+import time
+
 import cv2
 import mediapipe as mp
+import requests
+
+# Config
+API_ENDPOINT = os.getenv("GESTURE_ENDPOINT", "http://localhost:8000/gesture")
+POST_TIMEOUT = float(os.getenv("GESTURE_TIMEOUT", "0.5"))
+COOLDOWN_SECONDS = float(os.getenv("GESTURE_COOLDOWN", "1.0"))
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
@@ -16,6 +25,29 @@ hands = mp_hands.Hands(
     min_detection_confidence=0.7,
     min_tracking_confidence=0.5
 )
+
+last_sent = {
+    "gesture": None,
+    "mode": None,
+    "timestamp": 0.0,
+}
+
+
+def send_gesture_update(gesture: str | None, mode: str | None):
+    """Send gesture/mode to the FastAPI backend with basic throttling."""
+    now = time.time()
+    changed = gesture != last_sent["gesture"] or mode != last_sent["mode"]
+    if not changed and (now - last_sent["timestamp"]) < COOLDOWN_SECONDS:
+        return
+
+    payload = {"gesture": gesture, "mode": mode}
+    try:
+        requests.post(API_ENDPOINT, json=payload, timeout=POST_TIMEOUT)
+        last_sent.update({"gesture": gesture, "mode": mode, "timestamp": now})
+    except requests.RequestException as exc:
+        # Print once per cooldown window even if the server is down
+        if (now - last_sent["timestamp"]) >= COOLDOWN_SECONDS:
+            print(f"[gesture_detect] Failed to send update: {exc}")
 
 def classify_gesture(landmarks):
     """Classify gesture based on finger positions."""
@@ -68,12 +100,21 @@ while True:
         action = "forward"
     elif gesture == "one":
         action = "spin"
+    elif gesture == "open":
+        action = "wave"
     else:
-        action = "stop"
+        gesture = None
+        action = None
 
     # Print and display
-    print(action)
-    cv2.putText(img, f"Action: {action}", (10, 50),
+    if action:
+        print(f"Gesture: {gesture} -> Mode: {action}")
+        send_gesture_update(gesture, action)
+    else:
+        send_gesture_update(None, None)
+
+    display_text = action or "standby"
+    cv2.putText(img, f"Mode: {display_text}", (10, 50),
                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
     cv2.imshow("Gesture Control", img)
