@@ -37,11 +37,21 @@
                 <div class="metric__value" id="distance-value">-- cm</div>
                 <div class="metric__status" id="distance-status">Waiting...</div>
             </div>
-            <div class="metric" id="motor-card">
-                <div class="metric__label">Motor</div>
-                <div class="metric__value" id="motor-value">--</div>
-                <div class="metric__status" id="motor-status">Waiting...</div>
+            <div class="metric" id="temperature-card">
+                <div class="metric__label">Temperature</div>
+                <div class="metric__value" id="temperature-value">-- °C</div>
+                <div class="metric__status" id="temperature-status">Waiting...</div>
             </div>
+        </section>
+
+        <section class="panel panel--gesture" id="gesture-panel">
+            <header class="gesture__header">
+                <div class="metric__label">Gesture Detection</div>
+                <div class="gesture__timestamp" id="gesture-timestamp">--:--:--</div>
+            </header>
+            <div class="gesture__label" id="gesture-label">No gesture</div>
+            <div class="gesture__mode" id="gesture-mode">Mode: standby</div>
+            <div class="gesture__message" id="gesture-message">No gesture detected</div>
         </section>
     </main>
 

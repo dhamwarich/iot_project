@@ -6,8 +6,13 @@ const soilValueEl = document.getElementById('soil-value');
 const soilStatusEl = document.getElementById('soil-status');
 const distanceValueEl = document.getElementById('distance-value');
 const distanceStatusEl = document.getElementById('distance-status');
-const motorValueEl = document.getElementById('motor-value');
-const motorStatusEl = document.getElementById('motor-status');
+const temperatureValueEl = document.getElementById('temperature-value');
+const temperatureStatusEl = document.getElementById('temperature-status');
+const gesturePanelEl = document.getElementById('gesture-panel');
+const gestureTimestampEl = document.getElementById('gesture-timestamp');
+const gestureLabelEl = document.getElementById('gesture-label');
+const gestureModeEl = document.getElementById('gesture-mode');
+const gestureMessageEl = document.getElementById('gesture-message');
 
 const CLASS_GOOD = 'metric__status status-good';
 const CLASS_WARN = 'metric__status status-warn';
@@ -85,26 +90,47 @@ function updateDistance(dist) {
     }
 }
 
-function updateMotor(motorState) {
-    if (!motorState) {
-        motorValueEl.textContent = 'Idle';
-        motorStatusEl.textContent = 'Awaiting command';
-        motorStatusEl.className = CLASS_IDLE;
+function updateTemperature(temp) {
+    if (typeof temp !== 'number') {
+        temperatureValueEl.textContent = '-- °C';
+        temperatureStatusEl.textContent = 'No data';
+        temperatureStatusEl.className = CLASS_IDLE;
         return;
     }
 
-    motorValueEl.textContent = motorState;
-    const normalized = motorState.toLowerCase();
-    if (normalized.includes('stop')) {
-        motorStatusEl.textContent = 'Stopped';
-        motorStatusEl.className = CLASS_IDLE;
-    } else if (normalized.includes('forward')) {
-        motorStatusEl.textContent = 'Moving forward';
-        motorStatusEl.className = CLASS_GOOD;
+    temperatureValueEl.textContent = `${temp.toFixed(1)} °C`;
+    if (temp < 20) {
+        temperatureStatusEl.textContent = 'Cool zone';
+        temperatureStatusEl.className = CLASS_WARN;
+    } else if (temp <= 28) {
+        temperatureStatusEl.textContent = 'Comfortable';
+        temperatureStatusEl.className = CLASS_GOOD;
+    } else if (temp <= 32) {
+        temperatureStatusEl.textContent = 'Warm';
+        temperatureStatusEl.className = CLASS_WARN;
     } else {
-        motorStatusEl.textContent = 'Adjusting position';
-        motorStatusEl.className = CLASS_WARN;
+        temperatureStatusEl.textContent = 'Hot';
+        temperatureStatusEl.className = CLASS_BAD;
     }
+}
+
+function updateGesture(gestureData) {
+    if (!gestureData) {
+        gesturePanelEl.classList.remove('gesture--active');
+        gestureTimestampEl.textContent = '--:--:--';
+        gestureLabelEl.textContent = 'No gesture';
+        gestureModeEl.textContent = 'Mode: standby';
+        gestureMessageEl.textContent = 'No gesture detected';
+        return;
+    }
+
+    const { gesture_label, gesture_mode, gesture_message, gesture_detected_at } = gestureData;
+    const active = Boolean(gesture_label);
+    gesturePanelEl.classList.toggle('gesture--active', active);
+    gestureTimestampEl.textContent = gesture_detected_at || '--:--:--';
+    gestureLabelEl.textContent = gesture_label ? gesture_label.toUpperCase() : 'No gesture';
+    gestureModeEl.textContent = `Mode: ${gesture_mode || 'standby'}`;
+    gestureMessageEl.textContent = gesture_message || 'No gesture detected';
 }
 
 async function updateDashboard() {
@@ -117,9 +143,8 @@ async function updateDashboard() {
         updateLight(null);
         updateSoil(null);
         updateDistance(null);
-        motorValueEl.textContent = 'Offline';
-        motorStatusEl.textContent = 'Connection lost';
-        motorStatusEl.className = CLASS_BAD;
+        updateTemperature(null);
+        updateGesture(null);
         return;
     }
 
@@ -127,7 +152,13 @@ async function updateDashboard() {
     updateLight(data.light_val);
     updateSoil(data.soil_val);
     updateDistance(data.distance_cm);
-    updateMotor(data.motor_state);
+    updateTemperature(data.temperature_c);
+    updateGesture({
+        gesture_label: data.gesture_label,
+        gesture_mode: data.gesture_mode,
+        gesture_message: data.gesture_message,
+        gesture_detected_at: data.gesture_detected_at
+    });
 }
 
 setInterval(updateDashboard, 1200);

@@ -54,6 +54,50 @@ main.page {
     gap: 18px;
 }
 
+.panel--gesture {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    padding: 28px;
+    transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.panel--gesture.gesture--active {
+    border-color: rgba(56, 189, 248, 0.6);
+    transform: translateY(-2px);
+}
+
+.gesture__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.gesture__timestamp {
+    font-variant-numeric: tabular-nums;
+}
+
+.gesture__label {
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.gesture__mode {
+    font-size: 1rem;
+    color: var(--muted);
+}
+
+.gesture__message {
+    font-size: 1rem;
+    color: var(--accent);
+}
+
 .panel__header {
     display: flex;
     justify-content: space-between;

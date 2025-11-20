@@ -41,6 +41,16 @@ class RobotState(BaseModel):
     distance_cm: float
     current_face: str
     motor_state: str
+    temperature_c: float
+    gesture_label: Optional[str]
+    gesture_mode: Optional[str]
+    gesture_message: Optional[str]
+    gesture_detected_at: Optional[str]
+
+
+class GestureUpdate(BaseModel):
+    gesture: Optional[str]
+    mode: Optional[str]
 
 # --- 2. Robot Controller ---
 
@@ -55,6 +65,11 @@ class RobotController:
         self.soil_val = 50.0
         self.distance = 0.0
         self.motor_state = "STOPPED"
+        self.temperature_c = 24.0
+        self.gesture_label: Optional[str] = None
+        self.gesture_mode: Optional[str] = None
+        self.gesture_message: Optional[str] = "No gesture detected"
+        self.gesture_detected_at: Optional[str] = None
 
         # --- Hardware Setup ---
         self.serial_conn = None
@@ -154,18 +169,22 @@ class RobotController:
             change = random.uniform(-2, 2)
             s_val = max(0, min(100, s_val + change))
 
-        return dist_cm, l_val, s_val
+        # 3. Temperature (mocked for now)
+        temp = max(18.0, min(35.0, self.temperature_c + random.uniform(-0.3, 0.3)))
+
+        return dist_cm, l_val, s_val, temp
 
     def _loop(self):
         """Main autonomous loop."""
         while not self._stop_event.is_set():
             # 1. Get Data
-            dist, light, soil = self._read_sensors()
+            dist, light, soil, temp = self._read_sensors()
 
             with self.lock:
                 self.distance = dist
                 self.light_val = light
                 self.soil_val = soil
+                self.temperature_c = temp
 
             # 2. Apply Logic
             self._apply_logic(dist, light, soil)
@@ -210,8 +229,25 @@ class RobotController:
                 soil_val=self.soil_val,
                 distance_cm=self.distance,
                 current_face=self.current_face,
-                motor_state=self.motor_state
+                motor_state=self.motor_state,
+                temperature_c=self.temperature_c,
+                gesture_label=self.gesture_label,
+                gesture_mode=self.gesture_mode,
+                gesture_message=self.gesture_message,
+                gesture_detected_at=self.gesture_detected_at
             )
+
+    def update_gesture(self, label: Optional[str], mode: Optional[str]):
+        with self.lock:
+            self.gesture_label = label
+            self.gesture_mode = mode
+            if label:
+                target_mode = mode or "standby"
+                self.gesture_message = f"Gesture {label} detected → engaging {target_mode}"
+                self.gesture_detected_at = time.strftime("%H:%M:%S")
+            else:
+                self.gesture_message = "No gesture detected"
+                self.gesture_detected_at = None
 
     def close(self):
         self._stop_event.set()
@@ -240,6 +276,11 @@ def shutdown_event():
 @app.get("/state", response_model=RobotState)
 async def get_state():
     return robot.get_state()
+
+@app.post("/gesture")
+async def ingest_gesture(update: GestureUpdate):
+    robot.update_gesture(update.gesture, update.mode)
+    return {"status": "ok"}
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
