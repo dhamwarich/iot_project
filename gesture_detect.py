@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Optional
 
 import cv2
 import mediapipe as mp
@@ -33,7 +34,7 @@ last_sent = {
 }
 
 
-def send_gesture_update(gesture: str | None, mode: str | None):
+def send_gesture_update(gesture: Optional[str], mode: Optional[str]):
     """Send gesture/mode to the FastAPI backend with basic throttling."""
     now = time.time()
     changed = gesture != last_sent["gesture"] or mode != last_sent["mode"]
