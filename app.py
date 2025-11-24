@@ -67,7 +67,7 @@ class GestureUpdate(BaseModel):
 # --- 2. Robot Controller ---
 
 class RobotController:
-    def __init__(self, port="/dev/ttyACM0", baudrate=115200):
+    def __init__(self, port="/dev/ttyACM1", baudrate=115200):
         self.lock = threading.Lock()
         self._stop_event = threading.Event()
         
@@ -311,6 +311,7 @@ class RobotController:
         with self.lock:
             self.gesture_label = label
             self.gesture_mode = mode
+
             if label:
                 target_mode = mode or "standby"
                 self.gesture_message = f"Gesture {label} detected → engaging {target_mode}"
@@ -318,6 +319,21 @@ class RobotController:
             else:
                 self.gesture_message = "No gesture detected"
                 self.gesture_detected_at = None
+
+    # -------------------------------
+    # NEW: SEND GESTURE TO STM32 HERE
+    # -------------------------------
+        if self.serial_conn and label:
+            try:
+                packet = {
+                    "gesture": label,
+                    "mode": mode
+                }
+                self.serial_conn.write((json.dumps(packet) + "\n").encode())
+                print("Sent to STM32:", packet)
+            except Exception as e:
+                print("Error sending gesture to STM32:", e)
+
 
     def close(self):
         self._stop_event.set()
