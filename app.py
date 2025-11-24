@@ -101,10 +101,13 @@ class RobotController:
         # Serial connection (independent of GPIO hardware)
         if SERIAL_AVAILABLE:
             try:
-                self.serial_conn = serial.Serial(port, baudrate, timeout=0.2)
-                print(f"Serial connected on {port} @ {baudrate} bps")
+                self.serial_conn = serial.Serial(port, baudrate, timeout=1.0)
+                time.sleep(0.1)  # Allow connection to stabilize
+                self.serial_conn.flush()  # Clear any stale data in buffer
+                self.serial_conn.reset_input_buffer()  # Clear input buffer
+                print(f"✓ Serial connected on {port} @ {baudrate} bps")
             except serial.SerialException as exc:
-                print(f"Serial port {port} unavailable ({exc}). Keeping mock serial data.")
+                print(f"✗ Serial port {port} unavailable ({exc}). Keeping mock serial data.")
                 self.serial_conn = None
         else:
             print("PySerial unavailable. Install 'pyserial' to read STM32 data.")
@@ -160,15 +163,24 @@ class RobotController:
             return {}
 
         try:
+            # Check if data is available before reading
+            if self.serial_conn.in_waiting == 0:
+                return {}
+            
             raw = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
             if not raw:
                 return {}
+
+            # Debug: Print raw data (comment out after testing)
+            print(f"[SERIAL] Raw: {raw}")
 
             # Try JSON payload first
             try:
                 parsed = json.loads(raw)
                 if isinstance(parsed, dict):
-                    return {str(k).strip().lower(): parsed[k] for k in parsed}
+                    result = {str(k).strip().lower(): parsed[k] for k in parsed}
+                    print(f"[SERIAL] Parsed JSON: {result}")
+                    return result
             except json.JSONDecodeError:
                 pass
 
@@ -180,8 +192,12 @@ class RobotController:
                     continue
                 key, value = part.split(":", 1)
                 packet[key.strip().lower()] = value.strip()
+            
+            if packet:
+                print(f"[SERIAL] Parsed key-value: {packet}")
             return packet
-        except Exception:
+        except Exception as e:
+            print(f"[SERIAL] Error reading: {e}")
             return {}
 
     @staticmethod
@@ -268,7 +284,7 @@ class RobotController:
             self._apply_logic(dist, light, soil)
 
             # 3. Wait
-            time.sleep(0.5) # Update frequency
+            time.sleep(0.1) # Update frequency - faster polling for serial data
 
     def _apply_logic(self, dist, light, soil):
         """Decides face and movement based on sensors."""
