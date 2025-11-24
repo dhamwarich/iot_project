@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import glob
 import time
 import threading
 import random
@@ -99,18 +100,7 @@ class RobotController:
         self.use_mock_hardware = not HARDWARE_AVAILABLE
 
         # Serial connection (independent of GPIO hardware)
-        if SERIAL_AVAILABLE:
-            try:
-                self.serial_conn = serial.Serial(port, baudrate, timeout=1.0)
-                time.sleep(0.1)  # Allow connection to stabilize
-                self.serial_conn.flush()  # Clear any stale data in buffer
-                self.serial_conn.reset_input_buffer()  # Clear input buffer
-                print(f"✓ Serial connected on {port} @ {baudrate} bps")
-            except serial.SerialException as exc:
-                print(f"✗ Serial port {port} unavailable ({exc}). Keeping mock serial data.")
-                self.serial_conn = None
-        else:
-            print("PySerial unavailable. Install 'pyserial' to read STM32 data.")
+        self.serial_conn = self._init_serial_connection(port, baudrate)
 
         # GPIO hardware setup (motors, ultrasonic)
         if GPIO_AVAILABLE and Motor and DistanceSensor:
@@ -131,6 +121,38 @@ class RobotController:
         # Start background thread
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+
+    def _init_serial_connection(self, preferred_port, baudrate):
+        if not SERIAL_AVAILABLE:
+            print("PySerial unavailable. Install 'pyserial' to read STM32 data.")
+            return None
+
+        candidate_ports = []
+        if preferred_port:
+            candidate_ports.append(preferred_port)
+
+        auto_ports = sorted(glob.glob("/dev/ttyACM*") + glob.glob("/dev/ttyUSB*"))
+        for candidate in auto_ports:
+            if candidate not in candidate_ports:
+                candidate_ports.append(candidate)
+
+        if not candidate_ports:
+            print("✗ No serial devices (/dev/ttyACM* or /dev/ttyUSB*) found.")
+            return None
+
+        for candidate in candidate_ports:
+            try:
+                conn = serial.Serial(candidate, baudrate, timeout=1.0)
+                time.sleep(0.1)  # Allow connection to stabilize
+                conn.flush()
+                conn.reset_input_buffer()
+                print(f"✓ Serial connected on {candidate} @ {baudrate} bps")
+                return conn
+            except serial.SerialException as exc:
+                print(f"✗ Serial port {candidate} unavailable ({exc}).")
+
+        print("✗ Unable to open any serial ports. Running with mock data.")
+        return None
 
     # --- Motor Abstractions ---
 
