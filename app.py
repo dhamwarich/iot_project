@@ -67,7 +67,7 @@ class GestureUpdate(BaseModel):
 # --- 2. Robot Controller ---
 
 class RobotController:
-    def __init__(self, port="/dev/ttyACM1", baudrate=115200):
+    def __init__(self, port="/dev/serial0", baudrate=115200):
         self.lock = threading.Lock()
         self._stop_event = threading.Event()
         
