@@ -38,6 +38,14 @@ except ImportError:
 
 HARDWARE_AVAILABLE = GPIO_AVAILABLE
 
+# try:
+# 	ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+#	ser.flush()
+#	print("Connected to STM32. Ready to control LED")
+# except:
+# 	print("Error: Could not connect to /dev/ttyACM0. Is the USB plugged in?")
+# 	exit()
+
 # --- 1. Data Models & Config ---
 
 FACES = {
@@ -67,7 +75,7 @@ class GestureUpdate(BaseModel):
 # --- 2. Robot Controller ---
 
 class RobotController:
-    def __init__(self, port="/dev/serial0", baudrate=115200):
+    def __init__(self, port="/dev/ttyACM0", baudrate=115200):
         self.lock = threading.Lock()
         self._stop_event = threading.Event()
         
@@ -324,16 +332,7 @@ class RobotController:
     # NEW: SEND GESTURE TO STM32 HERE
     # -------------------------------
         if self.serial_conn and label:
-            try:
-                packet = {
-                    "gesture": label,
-                    "mode": mode
-                }
-                self.serial_conn.write((json.dumps(packet) + "\n").encode())
-                print("Sent to STM32:", packet)
-            except Exception as e:
-                print("Error sending gesture to STM32:", e)
-
+            print("serialconn success")
 
     def close(self):
         self._stop_event.set()
