@@ -142,10 +142,10 @@ class RobotController:
 
         for candidate in candidate_ports:
             try:
-                conn = serial.Serial(candidate, baudrate, timeout=1.0)
-                time.sleep(0.1)  # Allow connection to stabilize
-                conn.flush()
+                conn = serial.Serial(candidate, baudrate, timeout=0.5)
+                time.sleep(0.2)  # Allow connection to stabilize
                 conn.reset_input_buffer()
+                conn.reset_output_buffer()
                 print(f"✓ Serial connected on {candidate} @ {baudrate} bps")
                 return conn
             except serial.SerialException as exc:
@@ -185,13 +185,10 @@ class RobotController:
             return {}
 
         try:
-            # Check if data is available before reading
-            if self.serial_conn.in_waiting == 0:
-                return {}
-            
+            # Read line with timeout (set in serial connection)
             raw = self.serial_conn.readline().decode("utf-8", errors="replace").strip()
             if not raw:
-                return {}
+                return {}  # Timeout or empty line
 
             # Debug: Print raw data (comment out after testing)
             print(f"[SERIAL] Raw: {raw}")
