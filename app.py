@@ -213,7 +213,9 @@ class RobotController:
                 if ":" not in part:
                     continue
                 key, value = part.split(":", 1)
-                packet[key.strip().lower()] = value.strip()
+                # Normalize key by removing spaces and converting to lowercase
+                normalized_key = key.strip().lower().replace(" ", "")
+                packet[normalized_key] = value.strip()
             
             if packet:
                 print(f"[SERIAL] Parsed key-value: {packet}")
@@ -261,11 +263,15 @@ class RobotController:
 
         # Light & soil moisture from serial
         l_val = self._extract_serial_number(packet, (
-            "light", "light_val", "light detected", "lightdetected"
+            "light", "light_val", "lightdetected", "lightval"
         ), as_int=True)
         s_val = self._extract_serial_number(packet, (
-            "soil", "soil_val", "soil humidity", "soil_humidity"
+            "soil", "soil_val", "soilhumidity", "soilval"
         ))
+        
+        # Convert soil from 0-1 range to 0-100 percentage if needed
+        if s_val is not None and s_val <= 1.0:
+            s_val = s_val * 100.0
 
         if l_val is None and s_val is None and (not packet) and not self.serial_conn:
             # No serial hardware at all -> mock light/soil
