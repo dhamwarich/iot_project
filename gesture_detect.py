@@ -9,7 +9,7 @@ import requests
 # Config
 API_ENDPOINT = os.getenv("GESTURE_ENDPOINT", "http://localhost:8000/gesture")
 POST_TIMEOUT = float(os.getenv("GESTURE_TIMEOUT", "0.5"))
-COOLDOWN_SECONDS = float(os.getenv("GESTURE_COOLDOWN", "1.0"))
+COOLDOWN_SECONDS = float(os.getenv("GESTURE_COOLDOWN", "0.2"))
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
@@ -124,7 +124,7 @@ while True:
     cv2.imshow("Gesture Control", img)
 
     # Exit with 'q'
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(delay=1) & 0xFF == ord('q'):
         break
 
 cap.release()
