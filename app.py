@@ -94,6 +94,10 @@ class RobotController:
 
         # --- Hardware Setup ---
         self.serial_conn = None
+        self.serial_port = port
+        self.serial_baudrate = baudrate
+        self.serial_error_count = 0
+        self.last_reconnect_attempt = 0
         self.motor_right = None
         self.motor_left = None
         self.distance_sensor = None
@@ -142,14 +146,19 @@ class RobotController:
 
         for candidate in candidate_ports:
             try:
-                conn = serial.Serial(candidate, baudrate, timeout=0.5)
+                # Try to open with exclusive access
+                conn = serial.Serial(candidate, baudrate, timeout=0.5, exclusive=True)
                 time.sleep(0.2)  # Allow connection to stabilize
                 conn.reset_input_buffer()
                 conn.reset_output_buffer()
                 print(f"✓ Serial connected on {candidate} @ {baudrate} bps")
                 return conn
             except serial.SerialException as exc:
-                print(f"✗ Serial port {candidate} unavailable ({exc}).")
+                # Port might be locked by screen or another process
+                if "Resource busy" in str(exc) or "Permission denied" in str(exc):
+                    print(f"✗ Serial port {candidate} is locked by another process (screen?). Close it first.")
+                else:
+                    print(f"✗ Serial port {candidate} unavailable ({exc}).")
 
         print("✗ Unable to open any serial ports. Running with mock data.")
         return None
@@ -180,8 +189,37 @@ class RobotController:
 
     # --- Sensor Logic ---
 
+    def _reconnect_serial(self):
+        """Attempt to reconnect to serial port after disruption."""
+        current_time = time.time()
+        # Only try reconnecting once every 5 seconds
+        if current_time - self.last_reconnect_attempt < 5:
+            return False
+        
+        self.last_reconnect_attempt = current_time
+        print("[SERIAL] Attempting to reconnect...")
+        
+        # Close existing connection if any
+        if self.serial_conn:
+            try:
+                self.serial_conn.close()
+            except:
+                pass
+            self.serial_conn = None
+        
+        # Try to reconnect
+        new_conn = self._init_serial_connection(self.serial_port, self.serial_baudrate)
+        if new_conn:
+            self.serial_conn = new_conn
+            self.serial_error_count = 0
+            print("[SERIAL] Reconnection successful!")
+            return True
+        return False
+
     def _read_serial_packet(self):
         if not self.serial_conn:
+            # Try to reconnect if we don't have a connection
+            self._reconnect_serial()
             return {}
 
         try:
@@ -192,6 +230,18 @@ class RobotController:
 
             # Debug: Print raw data (comment out after testing)
             print(f"[SERIAL] Raw: {raw}")
+            
+            # Detect garbage/corrupted data (single char or very short)
+            if len(raw) < 5 or not any(c in raw for c in [':', '[', '{']):
+                self.serial_error_count += 1
+                print(f"[SERIAL] Warning: Received corrupted data (error count: {self.serial_error_count})")
+                if self.serial_error_count >= 3:
+                    print("[SERIAL] Too many errors, triggering reconnection...")
+                    self._reconnect_serial()
+                return {}
+
+            # Reset error count on successful read
+            self.serial_error_count = 0
 
             # Try JSON payload first
             try:
@@ -216,9 +266,19 @@ class RobotController:
             
             if packet:
                 print(f"[SERIAL] Parsed key-value: {packet}")
+            else:
+                # Empty packet might indicate corruption
+                self.serial_error_count += 1
             return packet
+        except (serial.SerialException, OSError) as e:
+            print(f"[SERIAL] Connection error: {e}")
+            self._reconnect_serial()
+            return {}
         except Exception as e:
             print(f"[SERIAL] Error reading: {e}")
+            self.serial_error_count += 1
+            if self.serial_error_count >= 5:
+                self._reconnect_serial()
             return {}
 
     @staticmethod
