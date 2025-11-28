@@ -446,19 +446,10 @@ class RobotController:
                 self.gesture_message = "No gesture detected"
                 self.gesture_detected_at = None
         
-        # Send mode command to STM32 via serial (with cooldown to prevent spamming)
-        if self.serial_conn and mode in MODE_MAP:
-            current_time = time.time()
-            # Only send command if 1 second has passed since last command
-            if current_time - self.last_command_sent >= 1.0:
-                try:
-                    command = MODE_MAP[mode]
-                    self.serial_conn.write(command.encode('utf-8'))
-                    self.serial_conn.flush()
-                    self.last_command_sent = current_time
-                    print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
-                except Exception as e:
-                    print(f"[SERIAL] Error sending command to STM32: {e}")
+        # DISABLED: Sending commands to STM32 causes it to stop sending sensor data
+        # The STM32 firmware needs to be modified to handle bidirectional communication
+        # For now, gestures only update the dashboard display
+        pass
 
     def close(self):
         self._stop_event.set()
