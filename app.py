@@ -37,14 +37,6 @@ except ImportError:
     GPIO_AVAILABLE = False
     Motor = DistanceSensor = None
 
-# Temperature & Humidity sensor (DHT11)
-try:
-    import Adafruit_DHT
-    DHT_SENSOR_AVAILABLE = True
-except ImportError:
-    print("Adafruit DHT library not found. Install with: pip install Adafruit_DHT")
-    DHT_SENSOR_AVAILABLE = False
-    Adafruit_DHT = None
 
 HARDWARE_AVAILABLE = GPIO_AVAILABLE
 
@@ -110,9 +102,6 @@ class RobotController:
         self.motor_right = None
         self.motor_left = None
         self.distance_sensor = None
-        self.dht_sensor = None
-        self.last_dht_read = 0  # Throttle DHT11 reads (min 2 sec between reads)
-        self.last_dht_temp = None  # Cache last successful DHT11 reading
         self.use_mock_hardware = not HARDWARE_AVAILABLE
 
         # Serial connection (independent of GPIO hardware)
@@ -131,24 +120,6 @@ class RobotController:
         else:
             self.use_mock_hardware = True
         
-        # Temperature & Humidity sensor setup (DHT11 on GPIO 17)
-        if DHT_SENSOR_AVAILABLE and Adafruit_DHT:
-            # Adafruit_DHT doesn't need initialization, just store sensor type and pin
-            self.dht_sensor = (Adafruit_DHT.DHT11, 17)  # (sensor_type, gpio_pin)
-            print("✓ DHT11 sensor ready on GPIO 17")
-            
-            # Test read on startup
-            try:
-                humidity, temp = Adafruit_DHT.read_retry(Adafruit_DHT.DHT11, 17, retries=5, delay_seconds=1)
-                if temp is not None:
-                    print(f"✓ DHT11 test read: {temp:.1f}°C, {humidity:.1f}% humidity")
-                    self.last_dht_temp = temp
-                else:
-                    print("⚠ DHT11 test read failed - check wiring (VCC→5V, GND→GND, DATA→GPIO17)")
-            except Exception as e:
-                print(f"⚠ DHT11 test read error: {e}")
-        else:
-            print("DHT11 library not available. Using serial/mock data.")
 
         if self.use_mock_hardware:
             print("--- RUNNING DRIVE HARDWARE IN MOCK MODE ---")
@@ -376,43 +347,14 @@ class RobotController:
             if s_val is None:
                 s_val = self.soil_val
 
-        # Temperature (priority: RPI DHT11 > serial > mock)
-        temp = None
+        # Temperature (priority: serial > realistic mock)
+        temp = self._extract_serial_number(packet, (
+            "temperature", "temperature_c", "temp"
+        ))
         
-        # Try RPI DHT11 sensor first (throttled to avoid read errors and overheating)
-        if self.dht_sensor:
-            current_time = time.time()
-            # DHT11 requires minimum 2 seconds between reads
-            if current_time - self.last_dht_read >= 2.0:
-                try:
-                    sensor_type, gpio_pin = self.dht_sensor
-                    humidity, temp = Adafruit_DHT.read_retry(sensor_type, gpio_pin, retries=3, delay_seconds=0.5)
-                    self.last_dht_read = current_time  # Update timestamp regardless of success
-                    
-                    if temp is not None:
-                        self.last_dht_temp = temp  # Cache successful reading
-                        print(f"[DHT11] Temperature: {temp:.1f}°C, Humidity: {humidity:.1f}%")
-                    else:
-                        # Read failed, log and use cached value
-                        print(f"[DHT11] Read failed (returned None), using cached: {self.last_dht_temp}")
-                        temp = self.last_dht_temp
-                except Exception as e:
-                    print(f"[DHT11] Error reading sensor: {e}")
-                    self.last_dht_read = current_time  # Prevent rapid retries on error
-                    temp = self.last_dht_temp
-            else:
-                # Use cached value between reads to avoid polling sensor
-                temp = self.last_dht_temp
-        
-        # Fallback to serial data from STM32
+        # Realistic mock data (~24-25°C with small variations)
         if temp is None:
-            temp = self._extract_serial_number(packet, (
-                "temperature", "temperature_c", "temp"
-            ))
-        
-        # Final fallback to mock data
-        if temp is None:
-            temp = max(18.0, min(35.0, self.temperature_c + random.uniform(-0.3, 0.3)))
+            temp = 24.5 + random.uniform(-0.5, 0.5)
 
         return dist_cm, l_val, s_val, temp
 
