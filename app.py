@@ -136,6 +136,17 @@ class RobotController:
             # Adafruit_DHT doesn't need initialization, just store sensor type and pin
             self.dht_sensor = (Adafruit_DHT.DHT11, 17)  # (sensor_type, gpio_pin)
             print("✓ DHT11 sensor ready on GPIO 17")
+            
+            # Test read on startup
+            try:
+                humidity, temp = Adafruit_DHT.read_retry(Adafruit_DHT.DHT11, 17, retries=5, delay_seconds=1)
+                if temp is not None:
+                    print(f"✓ DHT11 test read: {temp:.1f}°C, {humidity:.1f}% humidity")
+                    self.last_dht_temp = temp
+                else:
+                    print("⚠ DHT11 test read failed - check wiring (VCC→5V, GND→GND, DATA→GPIO17)")
+            except Exception as e:
+                print(f"⚠ DHT11 test read error: {e}")
         else:
             print("DHT11 library not available. Using serial/mock data.")
 
@@ -376,16 +387,18 @@ class RobotController:
                 try:
                     sensor_type, gpio_pin = self.dht_sensor
                     humidity, temp = Adafruit_DHT.read_retry(sensor_type, gpio_pin, retries=3, delay_seconds=0.5)
+                    self.last_dht_read = current_time  # Update timestamp regardless of success
                     
                     if temp is not None:
-                        self.last_dht_read = current_time
                         self.last_dht_temp = temp  # Cache successful reading
                         print(f"[DHT11] Temperature: {temp:.1f}°C, Humidity: {humidity:.1f}%")
                     else:
-                        # Read failed, use cached value
+                        # Read failed, log and use cached value
+                        print(f"[DHT11] Read failed (returned None), using cached: {self.last_dht_temp}")
                         temp = self.last_dht_temp
                 except Exception as e:
                     print(f"[DHT11] Error reading sensor: {e}")
+                    self.last_dht_read = current_time  # Prevent rapid retries on error
                     temp = self.last_dht_temp
             else:
                 # Use cached value between reads to avoid polling sensor
