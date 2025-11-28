@@ -99,6 +99,7 @@ class RobotController:
         self.serial_baudrate = baudrate
         self.serial_error_count = 0
         self.last_reconnect_attempt = 0
+        self.last_command_sent = 0  # Timestamp of last command sent to STM32
         self.motor_right = None
         self.motor_left = None
         self.distance_sensor = None
@@ -235,11 +236,14 @@ class RobotController:
             print(f"[SERIAL] Raw: {raw}")
             
             # Detect garbage/corrupted data (single char or very short)
+            # But ignore short responses within 1 second of sending a command (STM32 might echo)
             if len(raw) < 5 or not any(c in raw for c in [':', '[', '{']):
+                if time.time() - self.last_command_sent < 1.0:
+                    # Likely echo from our command, ignore silently
+                    return {}
                 self.serial_error_count += 1
-                print(f"[SERIAL] Warning: Received corrupted data (error count: {self.serial_error_count})")
-                if self.serial_error_count >= 3:
-                    print("[SERIAL] Too many errors, triggering reconnection...")
+                if self.serial_error_count >= 5:  # Increased threshold
+                    print(f"[SERIAL] Too many errors ({self.serial_error_count}), triggering reconnection...")
                     self._reconnect_serial()
                 return {}
 
@@ -442,24 +446,17 @@ class RobotController:
                 self.gesture_message = "No gesture detected"
                 self.gesture_detected_at = None
         
-        # Send mode command to STM32 via serial (with lock to prevent read corruption)
+        # Send mode command to STM32 via serial
         if self.serial_conn and mode in MODE_MAP:
-            with self.lock:  # CRITICAL: Synchronize with read loop
-                try:
-                    command = MODE_MAP[mode]
-                    # Clear any pending input before writing to prevent buffer corruption
-                    if self.serial_conn.in_waiting > 0:
-                        self.serial_conn.reset_input_buffer()
-                    
-                    self.serial_conn.write(command.encode('utf-8'))
-                    self.serial_conn.flush()
-                    print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
-                    
-                    # Small delay to let STM32 process command before next read
-                    time.sleep(0.05)
-                except Exception as e:
-                    print(f"[SERIAL] Error sending command to STM32: {e}")
-                    # Don't trigger reconnection for write errors, only read errors
+            try:
+                command = MODE_MAP[mode]
+                self.serial_conn.write(command.encode('utf-8'))
+                self.serial_conn.flush()
+                self.last_command_sent = time.time()  # Track when we sent command
+                self.serial_error_count = 0  # Reset error count after successful send
+                print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
+            except Exception as e:
+                print(f"[SERIAL] Error sending command to STM32: {e}")
 
     def close(self):
         self._stop_event.set()
