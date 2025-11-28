@@ -446,10 +446,56 @@ class RobotController:
                 self.gesture_message = "No gesture detected"
                 self.gesture_detected_at = None
         
-        # DISABLED: Sending commands to STM32 causes it to stop sending sensor data
-        # The STM32 firmware needs to be modified to handle bidirectional communication
-        # For now, gestures only update the dashboard display
-        pass
+        # Send command to STM32, then try multiple recovery methods
+        if self.serial_conn and mode in MODE_MAP and mode is not None:
+            current_time = time.time()
+            if current_time - self.last_command_sent >= 2.0:  # 2 second cooldown
+                try:
+                    command = MODE_MAP[mode]
+                    self.serial_conn.write(command.encode('utf-8'))
+                    self.serial_conn.flush()
+                    print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
+                    self.last_command_sent = current_time
+                    
+                    # Try multiple recovery methods to break STM32 action loop
+                    time.sleep(0.3)
+                    
+                    # Method 1: Send stop command
+                    self.serial_conn.write(b'3')
+                    self.serial_conn.flush()
+                    print("[SERIAL] Recovery attempt 1: Sent stop command '3'")
+                    time.sleep(0.1)
+                    
+                    # Method 2: Send with newline
+                    self.serial_conn.write(b'3\n')
+                    self.serial_conn.flush()
+                    print("[SERIAL] Recovery attempt 2: Sent '3\\n'")
+                    time.sleep(0.1)
+                    
+                    # Method 3: Send multiple stops
+                    self.serial_conn.write(b'333')
+                    self.serial_conn.flush()
+                    print("[SERIAL] Recovery attempt 3: Sent '333'")
+                    time.sleep(0.1)
+                    
+                    # Method 4: Send carriage return
+                    self.serial_conn.write(b'\r\n')
+                    self.serial_conn.flush()
+                    print("[SERIAL] Recovery attempt 4: Sent '\\r\\n'")
+                    time.sleep(0.1)
+                    
+                    # Method 5: Toggle DTR (soft reset signal)
+                    self.serial_conn.dtr = False
+                    time.sleep(0.05)
+                    self.serial_conn.dtr = True
+                    print("[SERIAL] Recovery attempt 5: Toggled DTR")
+                    
+                    # Clear any garbage in buffer
+                    self.serial_conn.reset_input_buffer()
+                    print("[SERIAL] Cleared input buffer, waiting for data...")
+                    
+                except Exception as e:
+                    print(f"[SERIAL] Error during command/recovery: {e}")
 
     def close(self):
         self._stop_event.set()
