@@ -39,13 +39,12 @@ except ImportError:
 
 # Temperature & Humidity sensor (DHT11)
 try:
-    import adafruit_dht
-    import board
+    import Adafruit_DHT
     DHT_SENSOR_AVAILABLE = True
 except ImportError:
-    print("Adafruit DHT library not found. Install with: pip install adafruit-circuitpython-dht")
+    print("Adafruit DHT library not found. Install with: pip install Adafruit_DHT")
     DHT_SENSOR_AVAILABLE = False
-    adafruit_dht = board = None
+    Adafruit_DHT = None
 
 HARDWARE_AVAILABLE = GPIO_AVAILABLE
 
@@ -133,13 +132,10 @@ class RobotController:
             self.use_mock_hardware = True
         
         # Temperature & Humidity sensor setup (DHT11 on GPIO 17)
-        if DHT_SENSOR_AVAILABLE and adafruit_dht and board:
-            try:
-                self.dht_sensor = adafruit_dht.DHT11(board.D17)
-                print("✓ DHT11 sensor initialized on GPIO 17")
-            except Exception as exc:
-                print(f"DHT11 sensor initialization failed ({exc}). Using serial/mock data.")
-                self.dht_sensor = None
+        if DHT_SENSOR_AVAILABLE and Adafruit_DHT:
+            # Adafruit_DHT doesn't need initialization, just store sensor type and pin
+            self.dht_sensor = (Adafruit_DHT.DHT11, 17)  # (sensor_type, gpio_pin)
+            print("✓ DHT11 sensor ready on GPIO 17")
         else:
             print("DHT11 library not available. Using serial/mock data.")
 
@@ -378,15 +374,16 @@ class RobotController:
             # DHT11 requires minimum 2 seconds between reads
             if current_time - self.last_dht_read >= 2.0:
                 try:
-                    temp = self.dht_sensor.temperature
-                    # humidity = self.dht_sensor.humidity  # Available if needed
-                    self.last_dht_read = current_time
-                    self.last_dht_temp = temp  # Cache successful reading
-                    print(f"[DHT11] Temperature: {temp:.1f}°C")
-                except RuntimeError as e:
-                    # DHT sensors can occasionally fail to read, this is normal
-                    # Use cached value if available
-                    temp = self.last_dht_temp
+                    sensor_type, gpio_pin = self.dht_sensor
+                    humidity, temp = Adafruit_DHT.read_retry(sensor_type, gpio_pin, retries=3, delay_seconds=0.5)
+                    
+                    if temp is not None:
+                        self.last_dht_read = current_time
+                        self.last_dht_temp = temp  # Cache successful reading
+                        print(f"[DHT11] Temperature: {temp:.1f}°C, Humidity: {humidity:.1f}%")
+                    else:
+                        # Read failed, use cached value
+                        temp = self.last_dht_temp
                 except Exception as e:
                     print(f"[DHT11] Error reading sensor: {e}")
                     temp = self.last_dht_temp
