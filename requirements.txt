@@ -7,3 +7,5 @@ pydantic==1.10.18
 mediapipe==0.10.11
 opencv-python==4.8.1.78
 requests==2.31.0
+adafruit-circuitpython-dht==4.0.3
+adafruit-blinka==8.40.0

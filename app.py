@@ -37,6 +37,16 @@ except ImportError:
     GPIO_AVAILABLE = False
     Motor = DistanceSensor = None
 
+# Temperature & Humidity sensor (DHT11)
+try:
+    import adafruit_dht
+    import board
+    DHT_SENSOR_AVAILABLE = True
+except ImportError:
+    print("Adafruit DHT library not found. Install with: pip install adafruit-circuitpython-dht")
+    DHT_SENSOR_AVAILABLE = False
+    adafruit_dht = board = None
+
 HARDWARE_AVAILABLE = GPIO_AVAILABLE
 
 # try:
@@ -101,6 +111,8 @@ class RobotController:
         self.motor_right = None
         self.motor_left = None
         self.distance_sensor = None
+        self.dht_sensor = None
+        self.last_dht_read = 0  # Throttle DHT11 reads (min 2 sec between reads)
         self.use_mock_hardware = not HARDWARE_AVAILABLE
 
         # Serial connection (independent of GPIO hardware)
@@ -118,6 +130,17 @@ class RobotController:
                 self.use_mock_hardware = True
         else:
             self.use_mock_hardware = True
+        
+        # Temperature & Humidity sensor setup (DHT11 on GPIO 17)
+        if DHT_SENSOR_AVAILABLE and adafruit_dht and board:
+            try:
+                self.dht_sensor = adafruit_dht.DHT11(board.D17)
+                print("✓ DHT11 sensor initialized on GPIO 17")
+            except Exception as exc:
+                print(f"DHT11 sensor initialization failed ({exc}). Using serial/mock data.")
+                self.dht_sensor = None
+        else:
+            print("DHT11 library not available. Using serial/mock data.")
 
         if self.use_mock_hardware:
             print("--- RUNNING DRIVE HARDWARE IN MOCK MODE ---")
@@ -344,10 +367,31 @@ class RobotController:
             if s_val is None:
                 s_val = self.soil_val
 
-        # Temperature (prefer serial, otherwise jitter existing mock)
-        temp = self._extract_serial_number(packet, (
-            "temperature", "temperature_c", "temp"
-        ))
+        # Temperature (priority: RPI DHT11 > serial > mock)
+        temp = None
+        
+        # Try RPI DHT11 sensor first (throttled to avoid read errors)
+        if self.dht_sensor:
+            current_time = time.time()
+            # DHT11 requires minimum 2 seconds between reads
+            if current_time - self.last_dht_read >= 2.0:
+                try:
+                    temp = self.dht_sensor.temperature
+                    # humidity = self.dht_sensor.humidity  # Available if needed
+                    self.last_dht_read = current_time
+                except RuntimeError as e:
+                    # DHT sensors can occasionally fail to read, this is normal
+                    pass
+                except Exception as e:
+                    print(f"[DHT11] Error reading sensor: {e}")
+        
+        # Fallback to serial data from STM32
+        if temp is None:
+            temp = self._extract_serial_number(packet, (
+                "temperature", "temperature_c", "temp"
+            ))
+        
+        # Final fallback to mock data
         if temp is None:
             temp = max(18.0, min(35.0, self.temperature_c + random.uniform(-0.3, 0.3)))
 
