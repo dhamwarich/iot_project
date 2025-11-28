@@ -6,8 +6,6 @@ import cv2
 import mediapipe as mp
 import requests
 
-import serial
-
 # Config
 API_ENDPOINT = os.getenv("GESTURE_ENDPOINT", "http://localhost:8000/gesture")
 POST_TIMEOUT = float(os.getenv("GESTURE_TIMEOUT", "0.5"))
@@ -29,26 +27,12 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.5
 )
 
-# init serial
-try:
-	ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
-	ser.flush()
-	print("Connected to STM32. Ready to control LED")
-except:
-	print("Error: Could not connect to /dev/ttyACM0. Is the USB plugged in?")
-	exit()
+print("Gesture detection ready. Sending commands via HTTP API to app.py")
 
 last_sent = {
     "gesture": None,
     "mode": None,
     "timestamp": 0.0,
-}
-
-MODE_MAP = {
-"forward" : '0',
-"spin" : '1',
-"wave" : '2',
-None : '3'
 }
 
 
@@ -63,7 +47,7 @@ def send_gesture_update(gesture: Optional[str], mode: Optional[str]):
     try:
         requests.post(API_ENDPOINT, json=payload, timeout=POST_TIMEOUT)
         last_sent.update({"gesture": gesture, "mode": mode, "timestamp": now})
-        ser.write(MODE_MAP[mode].encode('utf-8'))
+        print(f"[gesture_detect] Sent: {gesture} -> {mode}")
     except requests.RequestException as exc:
         # Print once per cooldown window even if the server is down
         if (now - last_sent["timestamp"]) >= COOLDOWN_SECONDS:

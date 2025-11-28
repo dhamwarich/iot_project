@@ -417,6 +417,14 @@ class RobotController:
             )
 
     def update_gesture(self, label: Optional[str], mode: Optional[str]):
+        # Mode mapping for STM32
+        MODE_MAP = {
+            "forward": '0',
+            "spin": '1',
+            "wave": '2',
+            None: '3'
+        }
+        
         with self.lock:
             self.gesture_label = label
             self.gesture_mode = mode
@@ -428,12 +436,17 @@ class RobotController:
             else:
                 self.gesture_message = "No gesture detected"
                 self.gesture_detected_at = None
-
-    # -------------------------------
-    # NEW: SEND GESTURE TO STM32 HERE
-    # -------------------------------
-        if self.serial_conn and label:
-            print("serialconn success")
+        
+        # Send mode command to STM32 via serial
+        if self.serial_conn and mode in MODE_MAP:
+            try:
+                command = MODE_MAP[mode]
+                self.serial_conn.write(command.encode('utf-8'))
+                self.serial_conn.flush()
+                print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
+            except Exception as e:
+                print(f"[SERIAL] Error sending command to STM32: {e}")
+                # Don't trigger reconnection for write errors, only read errors
 
     def close(self):
         self._stop_event.set()
