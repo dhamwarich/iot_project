@@ -113,6 +113,7 @@ class RobotController:
         self.distance_sensor = None
         self.dht_sensor = None
         self.last_dht_read = 0  # Throttle DHT11 reads (min 2 sec between reads)
+        self.last_dht_temp = None  # Cache last successful DHT11 reading
         self.use_mock_hardware = not HARDWARE_AVAILABLE
 
         # Serial connection (independent of GPIO hardware)
@@ -222,21 +223,22 @@ class RobotController:
         self.last_reconnect_attempt = current_time
         print("[SERIAL] Attempting to reconnect...")
         
-        # Close existing connection if any
-        if self.serial_conn:
-            try:
-                self.serial_conn.close()
-            except:
-                pass
-            self.serial_conn = None
-        
-        # Try to reconnect
-        new_conn = self._init_serial_connection(self.serial_port, self.serial_baudrate)
-        if new_conn:
-            self.serial_conn = new_conn
-            self.serial_error_count = 0
-            print("[SERIAL] Reconnection successful!")
-            return True
+        with self.lock:  # Protect serial connection changes
+            # Close existing connection if any
+            if self.serial_conn:
+                try:
+                    self.serial_conn.close()
+                except:
+                    pass
+                self.serial_conn = None
+            
+            # Try to reconnect
+            new_conn = self._init_serial_connection(self.serial_port, self.serial_baudrate)
+            if new_conn:
+                self.serial_conn = new_conn
+                self.serial_error_count = 0
+                print("[SERIAL] Reconnection successful!")
+                return True
         return False
 
     def _read_serial_packet(self):
@@ -370,7 +372,7 @@ class RobotController:
         # Temperature (priority: RPI DHT11 > serial > mock)
         temp = None
         
-        # Try RPI DHT11 sensor first (throttled to avoid read errors)
+        # Try RPI DHT11 sensor first (throttled to avoid read errors and overheating)
         if self.dht_sensor:
             current_time = time.time()
             # DHT11 requires minimum 2 seconds between reads
@@ -379,11 +381,18 @@ class RobotController:
                     temp = self.dht_sensor.temperature
                     # humidity = self.dht_sensor.humidity  # Available if needed
                     self.last_dht_read = current_time
+                    self.last_dht_temp = temp  # Cache successful reading
+                    print(f"[DHT11] Temperature: {temp:.1f}°C")
                 except RuntimeError as e:
                     # DHT sensors can occasionally fail to read, this is normal
-                    pass
+                    # Use cached value if available
+                    temp = self.last_dht_temp
                 except Exception as e:
                     print(f"[DHT11] Error reading sensor: {e}")
+                    temp = self.last_dht_temp
+            else:
+                # Use cached value between reads to avoid polling sensor
+                temp = self.last_dht_temp
         
         # Fallback to serial data from STM32
         if temp is None:
@@ -481,16 +490,24 @@ class RobotController:
                 self.gesture_message = "No gesture detected"
                 self.gesture_detected_at = None
         
-        # Send mode command to STM32 via serial
+        # Send mode command to STM32 via serial (with lock to prevent read corruption)
         if self.serial_conn and mode in MODE_MAP:
-            try:
-                command = MODE_MAP[mode]
-                self.serial_conn.write(command.encode('utf-8'))
-                self.serial_conn.flush()
-                print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
-            except Exception as e:
-                print(f"[SERIAL] Error sending command to STM32: {e}")
-                # Don't trigger reconnection for write errors, only read errors
+            with self.lock:  # CRITICAL: Synchronize with read loop
+                try:
+                    command = MODE_MAP[mode]
+                    # Clear any pending input before writing to prevent buffer corruption
+                    if self.serial_conn.in_waiting > 0:
+                        self.serial_conn.reset_input_buffer()
+                    
+                    self.serial_conn.write(command.encode('utf-8'))
+                    self.serial_conn.flush()
+                    print(f"[SERIAL] Sent command to STM32: {command} (mode: {mode})")
+                    
+                    # Small delay to let STM32 process command before next read
+                    time.sleep(0.05)
+                except Exception as e:
+                    print(f"[SERIAL] Error sending command to STM32: {e}")
+                    # Don't trigger reconnection for write errors, only read errors
 
     def close(self):
         self._stop_event.set()
