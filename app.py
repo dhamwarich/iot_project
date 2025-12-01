@@ -447,32 +447,18 @@ class RobotController:
                 self.gesture_detected_at = None
         
         # Send command to STM32
-        # Only send stop/recovery when gesture is None (hand removed)
+        # IMPORTANT: Do NOT send \n - STM32 reads 1 byte at a time, \n would be read
+        # as a separate command and trigger the "else" clause which stops motors!
         if self.serial_conn and mode in MODE_MAP:
             current_time = time.time()
-            if current_time - self.last_command_sent >= 0.5:  # 0.5 second cooldown
+            if current_time - self.last_command_sent >= 0.3:  # 0.3 second cooldown
                 try:
                     command = MODE_MAP[mode]
-                    # Send command with newline (required format)
-                    self.serial_conn.write(f"{command}\n".encode('utf-8'))
+                    # Send ONLY the command byte, no newline!
+                    self.serial_conn.write(command.encode('utf-8'))
                     self.serial_conn.flush()
                     self.last_command_sent = current_time
-                    
-                    if mode is not None:
-                        # Action command (forward) - just send, no recovery
-                        print(f"[SERIAL] Sent action to STM32: {command}\\n (mode: {mode})")
-                    else:
-                        # No gesture (mode=None) - send stop and try to recover serial
-                        print(f"[SERIAL] Sent stop to STM32: {command}\\n")
-                        time.sleep(0.1)
-                        
-                        # Recovery attempts to get sensor data flowing again
-                        self.serial_conn.write(b'3\n')
-                        self.serial_conn.flush()
-                        time.sleep(0.1)
-                        self.serial_conn.write(b'3\n')
-                        self.serial_conn.flush()
-                        print("[SERIAL] Sent recovery commands")
+                    print(f"[SERIAL] Sent to STM32: '{command}' (mode: {mode})")
                     
                 except Exception as e:
                     print(f"[SERIAL] Error: {e}")

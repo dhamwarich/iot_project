@@ -102,10 +102,10 @@ while True:
     # Map gestures to actions
     if gesture == "fist":
         action = "forward"
-    # elif gesture == "one":
-    #     action = "spin"
-    # elif gesture == "open":
-    #     action = "wave"
+    elif gesture == "one":
+        action = "spin"
+    elif gesture == "open":
+        action = "wave"
     else:
         gesture = None
         action = None
