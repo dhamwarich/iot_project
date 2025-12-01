@@ -10,6 +10,7 @@ import requests
 API_ENDPOINT = os.getenv("GESTURE_ENDPOINT", "http://localhost:8000/gesture")
 POST_TIMEOUT = float(os.getenv("GESTURE_TIMEOUT", "0.5"))
 COOLDOWN_SECONDS = float(os.getenv("GESTURE_COOLDOWN", "0.2"))
+HEADLESS = os.getenv("GESTURE_HEADLESS", "1").lower() in ("1", "true", "yes")
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
@@ -117,15 +118,15 @@ while True:
     else:
         send_gesture_update(None, None)
 
-    display_text = action or "standby"
-    cv2.putText(img, f"Mode: {display_text}", (10, 50),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    cv2.imshow("Gesture Control", img)
-
-    # Exit with 'q'
-    if cv2.waitKey(delay=1) & 0xFF == ord('q'):
-        break
+    if not HEADLESS:
+        display_text = action or "standby"
+        cv2.putText(img, f"Mode: {display_text}", (10, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.imshow("Gesture Control", img)
+        # Exit with 'q'
+        if cv2.waitKey(delay=1) & 0xFF == ord('q'):
+            break
 
 cap.release()
-cv2.destroyAllWindows()
+if not HEADLESS:
+    cv2.destroyAllWindows()
